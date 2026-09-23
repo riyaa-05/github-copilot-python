@@ -1,18 +1,54 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sudoku Game</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <h1>Sudoku Game</h1>
-  <div id="sudoku-board"></div>
+  <main class="game">
+    <h1>Sudoku Game</h1>
+  <section class="game-settings" aria-label="Game settings">
+    <label for="player-name">Player name</label>
+    <input id="player-name" type="text" maxlength="30" placeholder="Your name" autocomplete="name">
+    <label for="difficulty">Difficulty</label>
+    <select id="difficulty">
+      <option value="easy">Easy</option>
+      <option value="medium" selected>Medium</option>
+      <option value="hard">Hard</option>
+    </select>
+    <span id="difficulty-indicator" aria-live="polite">Medium puzzle</span>
+    <button id="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+  </section>
+  <p class="game-status">
+    <span>Time: <strong id="timer">0:00.0</strong></span>
+    <span>Hints used: <strong id="hint-count">0</strong></span>
+  </p>
+  <div id="sudoku-board" role="grid" aria-label="Sudoku puzzle"></div>
   <div class="controls">
     <button id="new-game">New Game</button>
+    <button id="hint" type="button">Hint</button>
     <button id="check-solution">Check Solution</button>
-    <span id="message"></span>
+    <p id="message" role="status" aria-live="polite"></p>
   </div>
+  <section class="scores" aria-labelledby="scores-heading">
+    <h2 id="scores-heading">Top 10 Scores</h2>
+    <table id="scores-table">
+      <thead>
+        <tr>
+          <th scope="col">Rank</th>
+          <th scope="col">Player</th>
+          <th scope="col">Time</th>
+          <th scope="col">Difficulty</th>
+          <th scope="col">Hints</th>
+        </tr>
+      </thead>
+      <tbody id="scores-body"></tbody>
+    </table>
+    <p id="no-scores">No completed games yet.</p>
+  </section>
+  </main>
   <script src="/static/main.js"></script>
 </body>
 </html>
