@@ -9,12 +9,134 @@ const DIFFICULTY_SETTINGS = {
   hard: { clues: 25, rank: 3 }
 };
 let puzzle = [];
+let solution = [];
 let gameStartedAt = null;
 let gameDifficulty = 'medium';
 let hintsUsed = 0;
 let gameCompleted = false;
 let timerId = null;
 let elapsedSeconds = 0;
+
+function getBoardValues(inputs = [], ignoreDisabled = false) {
+  const board = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+
+  for (let row = 0; row < SIZE; row++) {
+    for (let col = 0; col < SIZE; col++) {
+      const input = inputs[row * SIZE + col];
+      if (!input || (ignoreDisabled && input.disabled)) {
+        continue;
+      }
+      const value = input.value;
+      board[row][col] = value ? parseInt(value, 10) : 0;
+    }
+  }
+
+  return board;
+}
+
+function getIncorrectIndexes(board) {
+  const incorrectIndexes = new Set();
+
+  if (!Array.isArray(solution) || solution.length !== SIZE) {
+    return incorrectIndexes;
+  }
+
+  for (let row = 0; row < SIZE; row++) {
+    for (let col = 0; col < SIZE; col++) {
+      const value = board[row][col];
+      if (value !== 0 && value !== solution[row][col]) {
+        incorrectIndexes.add(row * SIZE + col);
+      }
+    }
+  }
+
+  return incorrectIndexes;
+}
+
+function getConflictIndexes(board) {
+  const conflictSet = new Set();
+
+  function markConflictIndex(row, col) {
+    conflictSet.add(row * SIZE + col);
+  }
+
+  for (let row = 0; row < SIZE; row++) {
+    const seen = new Map();
+    for (let col = 0; col < SIZE; col++) {
+      const value = board[row][col];
+      if (!value) continue;
+      if (!seen.has(value)) {
+        seen.set(value, { row, col });
+        continue;
+      }
+      markConflictIndex(row, col);
+      const previous = seen.get(value);
+      markConflictIndex(previous.row, previous.col);
+    }
+  }
+
+  for (let col = 0; col < SIZE; col++) {
+    const seen = new Map();
+    for (let row = 0; row < SIZE; row++) {
+      const value = board[row][col];
+      if (!value) continue;
+      if (!seen.has(value)) {
+        seen.set(value, { row, col });
+        continue;
+      }
+      markConflictIndex(row, col);
+      const previous = seen.get(value);
+      markConflictIndex(previous.row, previous.col);
+    }
+  }
+
+  for (let boxRow = 0; boxRow < SIZE; boxRow += 3) {
+    for (let boxCol = 0; boxCol < SIZE; boxCol += 3) {
+      const seen = new Map();
+      for (let row = boxRow; row < boxRow + 3; row++) {
+        for (let col = boxCol; col < boxCol + 3; col++) {
+          const value = board[row][col];
+          if (!value) continue;
+          if (!seen.has(value)) {
+            seen.set(value, { row, col });
+            continue;
+          }
+          markConflictIndex(row, col);
+          const previous = seen.get(value);
+          markConflictIndex(previous.row, previous.col);
+        }
+      }
+    }
+  }
+
+  return conflictSet;
+}
+
+function updateCellHighlighting() {
+  const boardDiv = document.getElementById('sudoku-board');
+  if (!boardDiv) return;
+
+  const inputs = boardDiv.getElementsByTagName('input');
+  const board = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+
+  for (let idx = 0; idx < inputs.length; idx++) {
+    const inp = inputs[idx];
+    const row = Math.floor(idx / SIZE);
+    const col = idx % SIZE;
+    board[row][col] = inp.value ? parseInt(inp.value, 10) : 0;
+  }
+
+  const conflictIndexes = getConflictIndexes(board);
+
+  for (let idx = 0; idx < inputs.length; idx++) {
+    const inp = inputs[idx];
+    inp.classList.remove('incorrect', 'conflict');
+    if (inp.disabled) continue;
+    if (conflictIndexes.has(idx)) {
+      inp.classList.add('conflict');
+    }
+  }
+}
 
 function loadScores() {
   try {
@@ -138,6 +260,9 @@ function createBoardElement() {
       input.addEventListener('input', (e) => {
         const val = e.target.value.replace(/[^1-9]/g, '');
         e.target.value = val;
+        if (e.target.disabled) return;
+
+        updateCellHighlighting();
       });
       input.addEventListener('keydown', (event) => {
         const direction = {
@@ -182,6 +307,7 @@ function renderPuzzle(puz) {
       }
     }
   }
+  updateCellHighlighting();
 }
 
 function updateGameStatus() {
@@ -201,6 +327,7 @@ async function newGame() {
     const res = await fetch(`/new?clues=${settings.clues}`);
     const data = await res.json();
     if (!res.ok || !data.puzzle) throw new Error(data.error || 'Unable to start a new game.');
+    solution = Array.isArray(data.solution) ? data.solution : [];
     renderPuzzle(data.puzzle);
     gameDifficulty = difficulty;
     gameStartedAt = performance.now();
@@ -240,6 +367,7 @@ async function requestHint() {
     input.className = 'sudoku-cell hinted';
     hintsUsed += 1;
     updateGameStatus();
+    updateCellHighlighting();
     msg.style.color = '';
     msg.textContent = 'One correct cell was filled in for you.';
     if (!Array.from(inputs).some((cell) => !cell.value)) {
@@ -285,25 +413,38 @@ async function checkSolution() {
     msg.textContent = data.error;
     return;
   }
-  const incorrect = new Set(data.incorrect.map(x => x[0]*SIZE + x[1]));
+  const reportedIncorrect = new Set(data.incorrect.map(x => x[0]*SIZE + x[1]));
+  const incorrect = new Set();
+  const conflictBoard = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
   for (let idx = 0; idx < inputs.length; idx++) {
     const inp = inputs[idx];
-    if (inp.disabled && !inp.classList.contains('hinted')) continue;
-    inp.classList.remove('incorrect');
+    const row = Math.floor(idx / SIZE);
+    const col = idx % SIZE;
+    if (!inp.disabled) {
+      conflictBoard[row][col] = inp.value ? parseInt(inp.value, 10) : 0;
+    }
+  }
+  const conflictIndexes = getConflictIndexes(conflictBoard);
+  for (let idx = 0; idx < inputs.length; idx++) {
+    const inp = inputs[idx];
+    if (inp.classList.contains('prefilled')) continue;
+
+    if (!inp.value || reportedIncorrect.has(idx)) {
+      incorrect.add(idx);
+    }
+
+    inp.classList.remove('incorrect', 'conflict');
     if (incorrect.has(idx)) {
       inp.classList.add('incorrect');
     }
+    if (conflictIndexes.has(idx)) {
+      inp.classList.add('conflict');
+    }
   }
   if (incorrect.size === 0) {
-    const hasEmptyCells = Array.from(inputs).some((input) => !input.value);
-    if (hasEmptyCells) {
-      msg.style.color = '';
-      msg.textContent = 'No incorrect entries. Keep going!';
-    } else {
-      msg.style.color = '#388e3c';
-      msg.textContent = `Congratulations! You solved it in ${formatTime(elapsedSeconds)}.`;
-    }
-    if (!hasEmptyCells && !gameCompleted && gameStartedAt !== null) {
+    msg.style.color = '#388e3c';
+    msg.textContent = `Congratulations! You solved it in ${formatTime(elapsedSeconds)}.`;
+    if (!gameCompleted && gameStartedAt !== null) {
       stopTimer();
       const settings = DIFFICULTY_SETTINGS[gameDifficulty];
       saveScore({
@@ -322,17 +463,18 @@ async function checkSolution() {
   }
 }
 
-// Wire buttons
-window.addEventListener('load', () => {
-  initializeTheme();
-  document.getElementById('new-game').addEventListener('click', newGame);
-  document.getElementById('hint').addEventListener('click', requestHint);
-  document.getElementById('check-solution').addEventListener('click', checkSolution);
-  document.getElementById('theme-toggle').addEventListener('click', () => {
-    setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark');
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  window.addEventListener('load', () => {
+    initializeTheme();
+    document.getElementById('new-game').addEventListener('click', newGame);
+    document.getElementById('hint').addEventListener('click', requestHint);
+    document.getElementById('check-solution').addEventListener('click', checkSolution);
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark');
+    });
+    document.getElementById('difficulty').addEventListener('change', updateGameStatus);
+    renderScores();
+    // initialize
+    newGame();
   });
-  document.getElementById('difficulty').addEventListener('change', updateGameStatus);
-  renderScores();
-  // initialize
-  newGame();
-});
+}

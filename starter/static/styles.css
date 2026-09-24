@@ -116,6 +116,13 @@ select:focus-visible {
     box-shadow: inset 0 0 0 2px #d32f2f;
 }
 
+.sudoku-cell.conflict {
+    background: #f8d7da;
+    color: #7f1d1d;
+    box-shadow: inset 0 0 0 2px #dc2626;
+    font-weight: bold;
+}
+
 .sudoku-cell.hinted {
     background: #c8e6c9;
     color: #1b5e20;
@@ -224,6 +231,13 @@ body.dark-mode .sudoku-cell.incorrect {
     background: #8f3942;
     color: #fff;
     box-shadow: inset 0 0 0 2px #ff8a80;
+}
+
+body.dark-mode .sudoku-cell.conflict {
+    background: #991b1b;
+    color: #fee2e2;
+    box-shadow: inset 0 0 0 2px #fca5a5;
+    font-weight: bold;
 }
 
 body.dark-mode .sudoku-cell.hinted {
